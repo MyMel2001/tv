@@ -1,4 +1,4 @@
-# sparkSammy TV (2025 edition)
+# sparkSammy TV (Frontend)
 
 100% free, 100% open source, 100% working with:
 - Pluto TV (no empty playlists!)

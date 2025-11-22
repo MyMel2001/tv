@@ -6,6 +6,7 @@
     <title>sparkSammy TV</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10"></script>
     <style>
+        /* ... (CSS remains the same) ... */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -140,7 +141,7 @@
     let channels = [];
 
     // Custom function to load the source using fetch with explicit cache bypass
-    function loadHlsSource(hlsInstance, proxyUrl, originalUrl) {
+    function loadHlsSource(hlsInstance, proxyUrl) {
         // Use fetch with cache: 'no-cache' to force the browser to re-validate the resource
         fetch(proxyUrl, {
             method: 'GET',
@@ -196,6 +197,14 @@
             url = url.replace('master.m3u8', '640x360/playlist.m3u8');
         }
 
+        // If the URL is empty or invalid after stripping, we must stop here.
+        if (!url || url.length < 10) {
+            console.error("Invalid channel URL provided after cleaning. Cannot load stream.");
+            loader.style.display = 'none';
+            nowPlaying.textContent = "Error: Invalid Stream URL";
+            return; 
+        }
+
         const playUrl = PROXY + '?url=' + encodeURIComponent(url);
 
         if (Hls.isSupported()) {
@@ -224,8 +233,8 @@
             // CRITICAL: Attach media immediately
             currentHls.attachMedia(video);
             
-            // 🔑 CRITICAL FIX: Load source using the cache-busting fetch function
-            loadHlsSource(currentHls, playUrl, channelUrl);
+            // 🔑 Load source using the cache-busting fetch function
+            loadHlsSource(currentHls, playUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
@@ -243,28 +252,31 @@
             currentHls.on(Hls.Events.ERROR, (event, data) => {
                 console.warn('HLS.js Error:', data);
                 loader.style.display = 'none';
-
+                
+                // --- 🔑 FIX: ALL FATAL ERRORS FORCE A CACHE-BUSTED RESTART ---
                 if (data.fatal) {
+                    currentHls.destroy();
+                    
+                    // Generate cache-busted URL for the restart attempt
+                    const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
+                    
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                        console.log("Media Error, recovering...");
-                        currentHls.recoverMediaError();
+                        console.log("Fatal Media Error, forcing full restart...");
+                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000);
                     } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         console.log("Fatal Network Error, restarting channel...");
-                        currentHls.destroy();
-                        setTimeout(() => playChannel(channelUrl, channelName), 5000); 
+                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 5000); 
                     } else {
                         console.log("Other Fatal Error, restarting channel...");
-                        currentHls.destroy();
-                        setTimeout(() => playChannel(channelUrl, channelName), 3000);
+                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 3000);
                     }
                 } 
-                // !!! AGGRESSIVE FIX: Treat non-fatal buffer stalls as fatal and restart
+                // !!! AGGRESSIVE STALL FIX: Treat non-fatal buffer stalls as fatal and restart
                 else if (data.details === 'levelEmptyError' || data.details === 'bufferStalledError') {
                     console.log(`NON-FATAL STALL (${data.details}). Forcing full channel restart in 1 second with CACHE BUSTER.`);
                     currentHls.destroy();
                     
-                    // 🔑 CRITICAL FIX: CACHE BUSTING on RESTART (Step 2)
-                    // Append a unique parameter (timestamp) to the original channelUrl for the RESTART call
+                    // Generate cache-busted URL for the restart attempt
                     const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
                     
                     setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000); 

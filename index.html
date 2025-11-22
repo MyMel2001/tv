@@ -153,63 +153,70 @@
 
         // 1. Clean URL (remove any old cachebusters)
         let url = channelUrl.replace(/(\?|&)?cachebuster=\d+/, '');
-        let finalUrl = '';
-
-        // 2. PROXY LOGIC
-        if (url.includes(PROXY)) {
-            finalUrl = url;
-        } else {
-            // 🛑 REVERTED: We DO NOT replace master.m3u8 anymore.
-            // Letting HLS.js handle the Master Playlist makes initial load more robust 
-            // because it can automatically pick a working stream variant.
-            finalUrl = PROXY + '?url=' + encodeURIComponent(url);
+        
+        // 2. Initial Proxy Wrap
+        // We wrap the initial manifest load here.
+        // Subsequent internal requests (keys, segments) are handled by xhrSetup below.
+        let playUrl = url;
+        if (!playUrl.includes(PROXY)) {
+             playUrl = PROXY + '?url=' + encodeURIComponent(url);
         }
 
         if (Hls.isSupported()) {
             currentHls = new Hls({
-                // FORCE CACHE RELOAD VIA HEADERS
+                // --- 🔑 CRITICAL FIX: INTERCEPT AND PROXY EVERYTHING ---
+                // This function runs before *every* network request (Manifest, Key, Segment).
+                // If HLS.js tries to fetch a raw URL (like the key file), we rewrite it to use the proxy.
                 xhrSetup: function(xhr, url) {
+                    // 1. Check if the URL is going to our proxy
+                    if (url.indexOf(PROXY) === -1) {
+                        // It's a raw URL (e.g. key file or redirect). Proxy it!
+                        // We have to modify the 'open' method of the XHR because the URL is already set by the time we get here.
+                        
+                        // NOTE: HLS.js passes the url string to xhrSetup, but modifying the string arg doesn't change the XHR.
+                        // We must re-open the XHR with the new URL.
+                        let proxiedUrl = PROXY + '?url=' + encodeURIComponent(url);
+                        xhr.open('GET', proxiedUrl, true);
+                    }
+
+                    // 2. Set Cache-Busting Headers
                     xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
                     xhr.setRequestHeader('Pragma', 'no-cache');
                     xhr.setRequestHeader('Expires', '0');
                 },
-                // 🚀 INSTANT START CONFIGURATION
-                // Start at level 0 (lowest quality) to get the first frame ASAP, then scale up.
-                startLevel: 0, 
-                // Allow player to drop quality to handle network jitters
-                autoLevelEnabled: true,
-                // Don't load higher quality than the screen can show
-                capLevelToPlayerSize: true,
                 
-                // LIVE STREAM STABILITY SETTINGS
-                // Hold a 3-segment buffer to survive Pluto's ad discontinuities
+                startLevel: -1, 
+                capLevelToPlayerSize: true,
+                maxBufferLength: 15, 
+                maxMaxBufferLength: 60,
+                abrEwmaDefaultEstimate: 300000, 
                 liveSyncDurationCount: 3, 
-                // Allow up to 10 segments of latency before forcing a seek (prevents jumpiness)
                 liveMaxLatencyDurationCount: 10,
-                // Treat live streams as infinite to prevent "end of buffer" errors
                 liveDurationInfinity: true,
-                // Aggressive timeouts to force retries if a segment is stuck
+                // Aggressive timeouts
                 manifestLoadingTimeOut: 10000,
+                manifestLoadingMaxRetry: 2,
                 fragLoadingTimeOut: 10000,
+                fragLoadingMaxRetry: 3,
             });
 
             currentHls.attachMedia(video);
-            currentHls.loadSource(finalUrl);
+            currentHls.loadSource(playUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
                 video.play().catch(e => console.warn("Auto-play failed:", e));
             });
             
-            // --- RECOVERY: RELOAD SAME URL ---
+            // --- RECOVERY LOGIC ---
             currentHls.on(Hls.Events.ERROR, (event, data) => {
-                // Ignore harmless buffer underruns that HLS.js fixes automatically
+                // Filter out non-fatal errors
                 if (!data.fatal && data.details !== 'bufferStalledError') return;
 
-                console.warn('HLS Issue:', data.details);
+                console.warn('HLS Error:', data.details);
 
                 if (data.fatal || data.details === 'bufferStalledError') {
-                    console.log("Stall/Fatal. Reloading stream...");
+                    console.log("Fatal/Stall. Reloading...");
                     currentHls.destroy();
                     setTimeout(() => playChannel(channelUrl, channelName), 1000);
                 }
@@ -222,7 +229,8 @@
             });
 
         } else {
-            video.src = finalUrl;
+            // Fallback for Safari
+            video.src = playUrl;
             video.play().catch(e => console.warn("Fallback play failed:", e));
         }
     }

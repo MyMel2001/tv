@@ -14,7 +14,7 @@ No backend required. Just one PHP proxy file + one HTML file.
 - Full cookie/header passthrough
 - Smart M3U8 rewriting
 - Pluto-proof hls.js config (locked to 640 kbps variant as a "hack" so it actually works)
-- Caching proxy (30 s)
+- Caching proxy (30s typically/3s for streams)
 - Beautiful glassmorphism UI
 - Zero dependencies except hls.js
 

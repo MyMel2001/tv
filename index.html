@@ -129,7 +129,7 @@
 <script>
     const PROXY = '/yacs/index.php';
     const originalPlaylist = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u';
-    // This loads the initial playlist list via proxy
+    // Initial playlist load via proxy
     const playlistUrl = PROXY + '?url=' + encodeURIComponent(originalPlaylist);
 
     const video = document.getElementById('video-player');
@@ -140,41 +140,42 @@
     let currentHls = null;
     let channels = [];
 
-    // FUNCTION: PLAY CHANNEL
     function playChannel(channelUrl, channelName) {
         loader.style.display = 'block';
         nowPlaying.textContent = channelName || 'Loading...';
 
-        // 1. Clean up existing player
         if (currentHls) { 
             currentHls.destroy(); 
             currentHls = null; 
         }
         video.src = '';
         video.pause();
-        
-        let url = channelUrl;
+        video.onstalled = null; 
 
-        // 2. Fix Pluto URLs if needed (Optimized resolution)
-        if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
-            url = url.replace('master.m3u8', '640x360/playlist.m3u8');
-        }
+        // 1. Clean URL (remove any old cachebusters)
+        let url = channelUrl.replace(/(\?|&)?cachebuster=\d+/, '');
+        let finalUrl = '';
 
-        // 3. Prepare Final URL
-        // Check if the URL is already being proxied to avoid double-wrapping
-        // (This happens if the M3U already contains proxied links)
-        let playUrl;
+        // 2. PROXY LOGIC: Check if the URL is already being proxied
         if (url.includes(PROXY)) {
-            playUrl = url;
+            // Case A: Already proxied (e.g. from PHP rewrite). Use as is.
+            finalUrl = url;
         } else {
-            playUrl = PROXY + '?url=' + encodeURIComponent(url);
+            // Case B: Raw URL. Optimize & Proxy it.
+            
+            // Apply Pluto Fix ONLY on raw URL
+            if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
+                url = url.replace('master.m3u8', '640x360/playlist.m3u8');
+            }
+            
+            // Append proxy to the beginning
+            finalUrl = PROXY + '?url=' + encodeURIComponent(url);
         }
 
         if (Hls.isSupported()) {
             currentHls = new Hls({
-                // Config to support headers that bypass cache
+                // FORCE CACHE RELOAD VIA HEADERS (No URL param hacks)
                 xhrSetup: function(xhr, url) {
-                    // This explicitly tells the browser/proxy NOT to use cached data
                     xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
                     xhr.setRequestHeader('Pragma', 'no-cache');
                     xhr.setRequestHeader('Expires', '0');
@@ -194,33 +195,25 @@
             });
 
             currentHls.attachMedia(video);
-            currentHls.loadSource(playUrl);
+            currentHls.loadSource(finalUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
                 video.play().catch(e => console.warn("Auto-play failed:", e));
             });
             
-            // --- RECOVERY LOGIC ---
-            
-            // Handle fatal errors or stalls by reloading the SAME URL
-            // (xhrSetup will ensure we get fresh data, no cachebuster needed)
+            // --- RECOVERY: RELOAD SAME URL (Headers handle the cache flush) ---
             currentHls.on(Hls.Events.ERROR, (event, data) => {
-                // Ignore minor errors
                 if (!data.fatal && data.details !== 'bufferStalledError' && data.details !== 'levelEmptyError') return;
-
                 console.warn('HLS Issue:', data.details);
 
                 if (data.fatal || data.details === 'bufferStalledError' || data.details === 'levelEmptyError') {
-                    console.log("Stall or Fatal Error. Reloading stream (cache bypassed via headers)...");
+                    console.log("Stall/Fatal. Reloading stream...");
                     currentHls.destroy();
-                    // Wait 1s and reload. 
-                    // No URL modification needed; headers will force fresh fetch.
                     setTimeout(() => playChannel(channelUrl, channelName), 1000);
                 }
             });
             
-            // Resume if buffer fills up while paused
             currentHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
                 if (video.paused && video.readyState >= 3) { 
                     video.play().catch(e => {});
@@ -228,17 +221,16 @@
             });
 
         } else {
-            // Fallback for non-HLS browsers (Safari)
-            video.src = playUrl;
+            // Fallback for Safari
+            video.src = finalUrl;
             video.play().catch(e => console.warn("Fallback play failed:", e));
         }
     }
 
-    // M3U PARSER
     function parseM3U(text) {
         const lines = text.split('\n');
         let ch = {};
-        channels = []; // reset
+        channels = []; 
 
         for (let line of lines) {
             line = line.trim();
@@ -248,7 +240,6 @@
                 ch = { name, logo };
             } else if (line && !line.startsWith('#') && ch.name) {
                 ch.url = line;
-                // Basic validation
                 if (ch.url && ch.url.startsWith('http')) {
                     channels.push({ ...ch });
                 }
@@ -276,7 +267,6 @@
         });
     }
 
-    // Load the main playlist
     fetch(playlistUrl)
         .then(r => r.ok ? r.text() : Promise.reject('Playlist failed'))
         .then(text => parseM3U(text))

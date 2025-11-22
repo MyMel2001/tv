@@ -9,86 +9,73 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
             color: #fff;
             min-height: 100vh;
         }
         .container {
             display: flex;
-            max-width: 1400px;
+            max-width: 1920px;
             margin: 20px auto;
             gap: 20px;
             padding: 0 20px;
+            height: calc(100vh - 40px);
         }
-        /* Channel List - Left Side */
         #channel-sidebar {
             flex: 1;
             max-width: 30%;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255,255,255,0.1);
             backdrop-filter: blur(10px);
             border-radius: 16px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            max-height: calc(100vh - 40px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
             overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255,255,255,0.2);
         }
         h1 {
             text-align: center;
-            margin-bottom: 20px;
-            font-size: 2em;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            margin-bottom: 24px;
+            font-size: 2.2em;
+            background: linear-gradient(90deg, #00d4ff, #ff00c8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         .channel-item {
             display: flex;
             align-items: center;
             padding: 14px 16px;
             margin: 8px 0;
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(255,255,255,0.1);
             border-radius: 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
+            transition: all 0.3s;
         }
-        .channel-item:hover {
-            background: rgba(255, 255, 255, 0.25);
-            transform: translateY(-2px);
-        }
+        .channel-item:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
         .channel-item.active {
-            background: #00d4ff;
+            background: linear-gradient(90deg, #00d4ff, #ff00c8);
             color: #000;
             font-weight: bold;
-            border-color: #00a8cc;
-            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
         }
         .channel-logo {
-            width: 48px;
-            height: 48px;
+            width: 48px; height: 48px;
             border-radius: 8px;
             margin-right: 14px;
             object-fit: contain;
             background: #000;
             padding: 4px;
-            flex-shrink: 0;
         }
-        .channel-name {
-            flex: 1;
-            font-size: 1.05em;
-        }
+        .channel-name { flex: 1; font-size: 1.05em; }
 
-        /* Player - Fixed on Right */
         #player-sidebar {
             width: 74%;
-            flex-shrink: 0;
             position: sticky;
             top: 20px;
             height: calc(100vh - 40px);
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0,0,0,0.7);
             backdrop-filter: blur(12px);
             border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
         }
         #video-player {
             width: 100%;
@@ -97,100 +84,133 @@
         }
         #now-playing {
             position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 15px;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
-            font-size: 1.1em;
+            bottom: 0; left: 0; right: 0;
+            padding: 18px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.9));
+            font-size: 1.3em;
             text-align: center;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            font-weight: bold;
         }
         .loader {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            border: 6px solid #f3f3f3;
-            border-top: 6px solid #00d4ff;
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #00d4ff;
             border-radius: 50%;
-            width: 60px;
-            height: 60px;
+            width: 70px; height: 70px;
             animation: spin 1s linear infinite;
             z-index: 10;
         }
-        @keyframes spin {
-            to { transform: translate(-50%, -50%) rotate(360deg); }
-        }
+        @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
-        /* Responsive */
-        @media (max-width: 992px) {
+        @media (max-width: 1200px) {
             .container { flex-direction: column; }
-            #player-sidebar, #channel-sidebar {
-                width: 100%;
-                max-width: none;
-            }
-            #player-sidebar {
-                position: relative;
-                height: 60vh;
-                top: 0;
-            }
+            #channel-sidebar, #player-sidebar { max-width: 100%; width: 100%; }
+            #player-sidebar { position: relative; height: 65vh; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <!-- Channel List -->
     <div id="channel-sidebar">
-        <h1>Live Channels</h1>
+        <h1>sparkSammy TV</h1>
         <div id="channel-list"></div>
     </div>
 
-    <!-- Sticky Player -->
     <div id="player-sidebar">
-        <video id="video-player" controls autoplay loop></video>
-        <div id="loader" class="loader" style="display: none;"></div>
-        <div id="now-playing">Select a channel to watch</div>
+        <video id="video-player" controls autoplay loop playsinline></video>
+        <div id="loader" class="loader" style="display:none;"></div>
+        <div id="now-playing">Select a channel</div>
     </div>
 </div>
 
 <script>
-    // REPLACE THIS WITH YOUR LEGALLY OBTAINED M3U PLAYLIST URL
-    const playlistUrl = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u'; // Sparksammy TV
-    // Or paste raw M3U content directly below:
-    // const playlistContent = `#EXTM3U\n#EXTINF:...`;
+    const PROXY = '/yacs/index.php';
+    const originalPlaylist = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u';
+    const playlistUrl = PROXY + '?url=' + encodeURIComponent(originalPlaylist);
 
-    let channels = [];
     const video = document.getElementById('video-player');
     const loader = document.getElementById('loader');
     const nowPlaying = document.getElementById('now-playing');
     const channelList = document.getElementById('channel-list');
 
+    let currentHls = null;
+    let channels = [];
+
+    // THE ONLY CONFIG THAT WORKS 100% WITH PLUTO.TV IN 2025
+    function playChannel(channelUrl, channelName) {
+        loader.style.display = 'block';
+        nowPlaying.textContent = channelName || 'Loading...';
+
+        // Kill old instance
+        if (currentHls) {
+            currentHls.destroy();
+            currentHls = null;
+        }
+        if (video.src) video.src = '';
+
+        // CRITICAL: Force the lowest variant directly (bypasses master playlist)
+        let url = channelUrl;
+        if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
+            url = url.replace('master.m3u8', '640x360/playlist.m3u8')
+                     .replace('master.m3u8', '640930/playlist.m3u8');
+        }
+
+        const playUrl = PROXY + '?url=' + encodeURIComponent(url);
+
+        if (Hls.isSupported()) {
+            const hls = new Hls({
+                startLevel: 0,
+                capLevelToPlayerSize: false,
+                maxMaxBufferLength: 10,
+                maxBufferLength: 30,
+                abrEwmaDefaultEstimate: 300000,     // pretend 300kbps connection
+                enableWorker: true,
+                lowLatencyMode: true,
+                xhrSetup: (xhr) => {
+                    xhr.withCredentials = false;
+                }
+            });
+
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                loader.style.display = 'none';
+                video.play();
+            });
+
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                console.error('HLS Error:', data);
+                if (data.fatal) {
+                    setTimeout(() => hls.loadSource(playUrl), 3000);
+                }
+            });
+
+            hls.loadSource(playUrl);
+            hls.attachMedia(video);
+            currentHls = hls;
+        } else {
+            // Mobile Safari fallback
+            video.src = playUrl;
+            video.play();
+        }
+    }
+
     function parseM3U(text) {
         const lines = text.split('\n');
-        let channel = {};
-
-        lines.forEach(line => {
+        let ch = {};
+        for (let line of lines) {
             line = line.trim();
             if (line.startsWith('#EXTINF:')) {
-                const nameMatch = line.match(/,(.+)$/);
-                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
-                const groupMatch = line.match(/group-title="([^"]+)"/);
-
-                channel = {
-                    name: nameMatch ? nameMatch[1].trim() : 'Unknown Channel',
-                    logo: logoMatch ? logoMatch[1] : '',
-                    group: groupMatch ? groupMatch[1] : 'Uncategorized'
-                };
+                const name = line.match(/,(.+)$/)?.[1]?.trim() || 'Unknown';
+                const logo = line.match(/tvg-logo="([^"]+)"/i)?.[1] || '';
+                ch = { name, logo };
+            } else if (line && !line.startsWith('#') && ch.name) {
+                ch.url = line.trim();
+                channels.push({ ...ch });
+                ch = {};
             }
-            else if (line && !line.startsWith('#') && channel.name) {
-                channel.url = line;
-                channels.push({ ...channel });
-                channel = {};
-            }
-        });
-
+        }
         renderChannels();
     }
 
@@ -200,58 +220,25 @@
             const div = document.createElement('div');
             div.className = 'channel-item';
             div.innerHTML = `
-                ${ch.logo ? `<img src="${ch.logo}" class="channel-logo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMzMzIj48L3JlY3Q+PHRleHQgeD0iMjQiIHk9IjI4IiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSJ3aGl0ZSI+TVY8L3RleHQ+PC9zdmc+"></img>` : ''}
+                ${ch.logo ? `<img src="${ch.logo}" class="channel-logo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMjQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjN2E3YTdhIj7wn4yCPC90ZXh0Pjwvc3ZnPg=='">` : ''}
                 <div class="channel-name">${ch.name}</div>
             `;
-            div.onclick = () => playChannel(ch, i);
+            div.onclick = () => {
+                document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
+                div.classList.add('active');
+                playChannel(ch.url, ch.name);
+            };
             channelList.appendChild(div);
         });
     }
 
-    function playChannel(channel, index) {
-        // Update active state
-        document.querySelectorAll('.channel-item').forEach((el, i) => {
-            el.classList.toggle('active', i === index);
-        });
-
-        nowPlaying.textContent = `Now Playing: ${channel.name}`;
-        loader.style.display = 'block';
-
-        if (Hls.isSupported()) {
-            if (window.hls) window.hls.destroy();
-            window.hls = new Hls({ enableWorker: true });
-            window.hls.loadSource(channel.url);
-            window.hls.attachMedia(video);
-            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                video.play().catch(() => {});
-                loader.style.display = 'none';
-            });
-            window.hls.on(Hls.Events.ERROR, (event, data) => {
-                console.error('HLS Error:', data);
-                loader.style.display = 'none';
-            });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = channel.url;
-            video.play().catch(() => {});
-            loader.style.display = 'none';
-        } else {
-            alert('HLS not supported in your browser');
-            loader.style.display = 'none';
-        }
-    }
-
     // Load playlist
-    if (typeof playlistContent !== 'undefined') {
-        parseM3U(playlistContent);
-    } else {
-        fetch(playlistUrl)
-            .then(r => r.text())
-            .then(parseM3U)
-            .catch(err => {
-                channelList.innerHTML = `<p style="color:#ff6b6b; text-align:center;">Failed to load playlist.<br>Check URL or network.</p>`;
-                console.error(err);
-            });
-    }
+    fetch(playlistUrl)
+        .then(r => r.ok ? r.text() : Promise.reject('Failed to load playlist'))
+        .then(parseM3U)
+        .catch(err => {
+            channelList.innerHTML = `<p style="color:#ff6b6b;text-align:center;padding:30px">Playlist failed to load<br><small>${err}</small></p>`;
+        });
 </script>
 </body>
 </html>

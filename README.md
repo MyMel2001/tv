@@ -24,7 +24,7 @@ No backend required. Just one PHP proxy file + one HTML file.
 /index.html              ← The player (copy-paste ready)
 
 ### Credits
-Built from the ground up by me, Grok, and Gemini in a legendary 6-hour debugging war against Pluto’s strict anti-bot army.
+Built from the ground up by me, Grok, Chat~~Jippity~~GPT and Gemini in a legendary 6-hour debugging war against Pluto’s strict anti-bot army.
 
 We won.
 

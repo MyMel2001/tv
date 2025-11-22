@@ -19,9 +19,9 @@ No backend required. Just one PHP proxy file + one HTML file.
 - Zero dependencies except hls.js
 
 ### Files
-/yacs/index.php          ← Universal proxy (the final version we fought for)
-/yacs/proxy_cache        ← Auto-created cache folder (make sure this is read-write!)
-/index.html              ← The player (copy-paste ready)
+* /yacs/index.php          ← Universal proxy (the final version we fought for)
+* /yacs/proxy_cache        ← Auto-created cache folder (make sure this is read-write!)
+* /index.html              ← The player (copy-paste ready)
 
 ### Credits
 Built from the ground up by me, Grok, Chat*~~Jippity~~*GPT and Gemini in a legendary 6-hour debugging war against Pluto’s strict anti-bot army.

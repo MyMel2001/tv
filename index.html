@@ -129,7 +129,6 @@
 <script>
     const PROXY = '/yacs/index.php';
     const originalPlaylist = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u';
-    // Initial playlist load via proxy
     const playlistUrl = PROXY + '?url=' + encodeURIComponent(originalPlaylist);
 
     const video = document.getElementById('video-player');
@@ -154,61 +153,70 @@
 
         // 1. Clean URL (remove any old cachebusters)
         let url = channelUrl.replace(/(\?|&)?cachebuster=\d+/, '');
-        let finalUrl = '';
-
-        // 2. PROXY LOGIC: Check if the URL is already being proxied
-        if (url.includes(PROXY)) {
-            // Case A: Already proxied (e.g. from PHP rewrite). Use as is.
-            finalUrl = url;
-        } else {
-            // Case B: Raw URL. Optimize & Proxy it.
-            
-            // Apply Pluto Fix ONLY on raw URL
-            if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
-                url = url.replace('master.m3u8', '640x360/playlist.m3u8');
-            }
-            
-            // Append proxy to the beginning
-            finalUrl = PROXY + '?url=' + encodeURIComponent(url);
+        
+        // 2. Initial Proxy Wrap
+        // We wrap the initial manifest load here.
+        // Subsequent internal requests (keys, segments) are handled by xhrSetup below.
+        let playUrl = url;
+        if (!playUrl.includes(PROXY)) {
+             playUrl = PROXY + '?url=' + encodeURIComponent(url);
         }
 
         if (Hls.isSupported()) {
             currentHls = new Hls({
-                // FORCE CACHE RELOAD VIA HEADERS (No URL param hacks)
+                // --- 🔑 CRITICAL FIX: INTERCEPT AND PROXY EVERYTHING ---
+                // This function runs before *every* network request (Manifest, Key, Segment).
+                // If HLS.js tries to fetch a raw URL (like the key file), we rewrite it to use the proxy.
                 xhrSetup: function(xhr, url) {
+                    // 1. Check if the URL is going to our proxy
+                    if (url.indexOf(PROXY) === -1) {
+                        // It's a raw URL (e.g. key file or redirect). Proxy it!
+                        // We have to modify the 'open' method of the XHR because the URL is already set by the time we get here.
+                        
+                        // NOTE: HLS.js passes the url string to xhrSetup, but modifying the string arg doesn't change the XHR.
+                        // We must re-open the XHR with the new URL.
+                        let proxiedUrl = PROXY + '?url=' + encodeURIComponent(url);
+                        xhr.open('GET', proxiedUrl, true);
+                    }
+
+                    // 2. Set Cache-Busting Headers
                     xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
                     xhr.setRequestHeader('Pragma', 'no-cache');
                     xhr.setRequestHeader('Expires', '0');
                 },
+                
                 startLevel: -1, 
                 capLevelToPlayerSize: true,
                 maxBufferLength: 15, 
                 maxMaxBufferLength: 60,
                 abrEwmaDefaultEstimate: 300000, 
-                liveSyncDurationCount: 5,   
-                liveMaxLatencyDurationCount: 15, 
+                liveSyncDurationCount: 3, 
+                liveMaxLatencyDurationCount: 10,
                 liveDurationInfinity: true,
-                maxBufferHysteresis: 10, 
-                lowBufferWatchdogPeriod: 2, 
-                manifestLoadingMaxRetryTimeout: 15000, 
-                fragLoadingMaxRetryTimeout: 15000,
+                // Aggressive timeouts
+                manifestLoadingTimeOut: 10000,
+                manifestLoadingMaxRetry: 2,
+                fragLoadingTimeOut: 10000,
+                fragLoadingMaxRetry: 3,
             });
 
             currentHls.attachMedia(video);
-            currentHls.loadSource(finalUrl);
+            currentHls.loadSource(playUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
                 video.play().catch(e => console.warn("Auto-play failed:", e));
             });
             
-            // --- RECOVERY: RELOAD SAME URL (Headers handle the cache flush) ---
+            // --- RECOVERY LOGIC ---
             currentHls.on(Hls.Events.ERROR, (event, data) => {
-                if (!data.fatal && data.details !== 'bufferStalledError' && data.details !== 'levelEmptyError') return;
-                console.warn('HLS Issue:', data.details);
+                // Filter out non-fatal errors
+                if (!data.fatal && data.details !== 'bufferStalledError') return;
 
-                if (data.fatal || data.details === 'bufferStalledError' || data.details === 'levelEmptyError') {
-                    console.log("Stall/Fatal. Reloading stream...");
+                console.warn('HLS Error:', data.details);
+
+                if (data.fatal || data.details === 'bufferStalledError') {
+                    console.log("Fatal/Stall. Reloading...");
                     currentHls.destroy();
                     setTimeout(() => playChannel(channelUrl, channelName), 1000);
                 }
@@ -222,7 +230,7 @@
 
         } else {
             // Fallback for Safari
-            video.src = finalUrl;
+            video.src = playUrl;
             video.play().catch(e => console.warn("Fallback play failed:", e));
         }
     }

@@ -6,7 +6,6 @@
     <title>sparkSammy TV</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10"></script>
     <style>
-        /* ... (CSS remains the same) ... */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -173,8 +172,10 @@
 
     // FINAL PLAY FUNCTION — continuous playback + Universal Cache-Busting Handling
     function playChannel(channelUrl, channelName) {
+        // Sanity Check for channelName
+        channelName = channelName || 'Loading...';
+        nowPlaying.textContent = channelName;
         loader.style.display = 'block';
-        nowPlaying.textContent = channelName || 'Loading...';
 
         // 1. Destroy any existing Hls instance
         if (currentHls) { 
@@ -197,11 +198,12 @@
             url = url.replace('master.m3u8', '640x360/playlist.m3u8');
         }
 
-        // If the URL is empty or invalid after stripping, we must stop here.
-        if (!url || url.length < 10) {
-            console.error("Invalid channel URL provided after cleaning. Cannot load stream.");
+        // 🛑 CRITICAL SANITY CHECK: If URL is empty after cleaning, abort before proxy construction
+        if (!url || !url.startsWith('http')) {
+            console.error("Critical Error: Stream URL is invalid or empty after cleaning. Aborting load.", {url});
             loader.style.display = 'none';
-            nowPlaying.textContent = "Error: Invalid Stream URL";
+            nowPlaying.textContent = `Error: Invalid Stream URL for ${channelName}`;
+            // Return here to prevent playUrl from resolving to just the root path
             return; 
         }
 
@@ -260,8 +262,8 @@
                     // Generate cache-busted URL for the restart attempt
                     const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
                     
-                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                        console.log("Fatal Media Error, forcing full restart...");
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR || data.details === 'manifestParsingError') {
+                        console.log("Fatal Media/Parsing Error, forcing full restart...");
                         setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000);
                     } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         console.log("Fatal Network Error, restarting channel...");
@@ -311,7 +313,12 @@
                 ch = { name, logo };
             } else if (line && !line.startsWith('#') && ch.name) {
                 ch.url = line;
-                channels.push({ ...ch });
+                // 🛑 NEW CHECK: Only add channel if URL looks like a URL
+                if (ch.url && ch.url.startsWith('http')) {
+                    channels.push({ ...ch });
+                } else {
+                    console.warn("Skipped channel due to invalid URL format:", ch.name, ch.url);
+                }
                 ch = {};
             }
         }
@@ -328,6 +335,12 @@
                 <div class="channel-name">${ch.name}</div>
             `;
             div.onclick = () => {
+                // 🛑 NEW CHECK: Validate URL before passing to playChannel
+                if (!ch.url || !ch.url.startsWith('http')) {
+                    alert(`Error: Cannot play ${ch.name}. Stream URL is missing or invalid.`);
+                    return;
+                }
+                
                 document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
                 div.classList.add('active');
                 playChannel(ch.url, ch.name);

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Playlist Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        #channel-list {
+            width: 80%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .channel-item {
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+        }
+        .channel-item:hover {
+            background-color: #f9f9f9;
+        }
+        .channel-item.active {
+            background-color: #e0f7fa;
+            font-weight: bold;
+        }
+        .channel-logo {
+            width: 40px;
+            height: 40px;
+            margin-right: 15px;
+            border-radius: 4px;
+            object-fit: contain;
+        }
+        #player-container {
+            width: 80%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            text-align: center;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        #no-channel {
+            color: #888;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <!-- Include HLS.js for HLS stream support -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <h1>IPTV Channel Viewer</h1>
+    <div id="channel-list"></div>
+    <div id="player-container">
+        <video id="video-player" controls></video>
+        <p id="no-channel">Select a channel to start watching.</p>
+        <div id="loader" class="loader" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Specify your legally obtained M3U playlist here (as a URL or inline content)
+        const playlistUrl = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u'; // Replace with your M3U URL
+        // OR inline M3U content (uncomment and use this if preferred)
+        // const playlistContent = `#EXTM3U\n#EXTINF:-1 tvg-logo="https://example.com/logo1.png",Channel 1\nhttp://example.com/stream1.m3u8\n#EXTINF:-1 tvg-logo="https://example.com/logo2.png",Channel 2\nhttp://example.com/stream2.m3u8`;
+
+        let channels = [];
+        const videoPlayer = document.getElementById('video-player');
+        const noChannelMsg = document.getElementById('no-channel');
+        const loader = document.getElementById('loader');
+        const channelList = document.getElementById('channel-list');
+
+        // Function to parse M3U content
+        function parseM3U(content) {
+            const lines = content.split('\n');
+            let currentChannel = null;
+            channels = [];
+
+            lines.forEach(line => {
+                line = line.trim();
+                if (line.startsWith('#EXTINF:')) {
+                    const info = line.substring(8);
+                    const commaIndex = info.lastIndexOf(',');
+                    const name = info.substring(commaIndex + 1).trim();
+                    const attrs = info.substring(0, commaIndex).trim();
+                    const logoMatch = attrs.match(/tvg-logo="([^"]+)"/);
+                    const logo = logoMatch ? logoMatch[1] : '';
+                    currentChannel = { name, logo };
+                } else if (line && !line.startsWith('#') && currentChannel) {
+                    currentChannel.url = line;
+                    channels.push(currentChannel);
+                    currentChannel = null;
+                }
+            });
+
+            renderChannels();
+        }
+
+        // Render channel list
+        function renderChannels() {
+            channelList.innerHTML = '';
+            channels.forEach((channel, index) => {
+                const item = document.createElement('div');
+                item.classList.add('channel-item');
+                if (channel.logo) {
+                    const img = document.createElement('img');
+                    img.src = channel.logo;
+                    img.alt = channel.name;
+                    img.classList.add('channel-logo');
+                    item.appendChild(img);
+                }
+                const text = document.createTextNode(channel.name);
+                item.appendChild(text);
+                item.addEventListener('click', () => playChannel(channel.url, index));
+                channelList.appendChild(item);
+            });
+        }
+
+        // Play selected channel
+        function playChannel(url, index) {
+            // Highlight active channel
+            document.querySelectorAll('.channel-item').forEach((item, i) => {
+                item.classList.toggle('active', i === index);
+            });
+
+            noChannelMsg.style.display = 'none';
+            loader.style.display = 'block';
+            videoPlayer.style.display = 'none';
+
+            // Stop current playback
+            if (Hls.isSupported()) {
+                if (window.hls) {
+                    window.hls.destroy();
+                }
+                window.hls = new Hls();
+                window.hls.loadSource(url);
+                window.hls.attachMedia(videoPlayer);
+                window.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    videoPlayer.play();
+                    loader.style.display = 'none';
+                    videoPlayer.style.display = 'block';
+                });
+            } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+                videoPlayer.src = url;
+                videoPlayer.addEventListener('loadedmetadata', () => {
+                    videoPlayer.play();
+                    loader.style.display = 'none';
+                    videoPlayer.style.display = 'block';
+                });
+            } else {
+                alert('Your browser does not support HLS playback.');
+                loader.style.display = 'none';
+            }
+        }
+
+        // Fetch and parse playlist
+        if (playlistUrl) {
+            fetch(playlistUrl)
+                .then(response => response.text())
+                .then(parseM3U)
+                .catch(error => console.error('Error fetching playlist:', error));
+        } else if (typeof playlistContent !== 'undefined') {
+            parseM3U(playlistContent);
+        } else {
+            alert('Please specify a playlist URL or content.');
+        }
+    </script>
+</body>
+</html>

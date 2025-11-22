@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>sparkSammy TV</title>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -120,7 +120,7 @@
     </div>
 
     <div id="player-sidebar">
-        <video id="video-player" controls autoplay loop playsinline></video>
+        <video id="video-player" controls autoplay playsinline></video>
         <div id="loader" class="loader"></div>
         <div id="now-playing">Select a channel</div>
     </div>
@@ -139,65 +139,153 @@
     let currentHls = null;
     let channels = [];
 
-    // FINAL PLAY FUNCTION — continuous playback + Pluto ad/discontinuity fix
+    // Custom function to load the source using fetch with explicit cache bypass
+    function loadHlsSource(hlsInstance, proxyUrl, originalUrl) {
+        // Use fetch with cache: 'no-cache' to force the browser to re-validate the resource
+        fetch(proxyUrl, {
+            method: 'GET',
+            cache: 'no-cache', // CRITICAL: Bypasses browser's local cache
+            headers: {
+                'X-Request-Bypass': Date.now().toString() // Extra parameter to help proxy/CDN cache busting
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`Network response was not ok: ${response.status}`);
+            return response.text();
+        })
+        .then(manifestText => {
+            // Load the fetched manifest text directly into HLS.js
+            hlsInstance.loadSource(manifestText);
+        })
+        .catch(error => {
+            console.error("Failed to fetch manifest with cache bypass:", error);
+            loader.style.display = 'none';
+            // Trigger a network error recovery if the fetch fails
+            hlsInstance.trigger(Hls.Events.ERROR, {
+                type: Hls.ErrorTypes.NETWORK_ERROR,
+                details: 'manifestLoadingError',
+                fatal: true,
+                error: error
+            });
+        });
+    }
+
+    // FINAL PLAY FUNCTION — continuous playback + Universal Cache-Busting Handling
     function playChannel(channelUrl, channelName) {
         loader.style.display = 'block';
         nowPlaying.textContent = channelName || 'Loading...';
 
-        if (currentHls) { currentHls.destroy(); currentHls = null; }
-        if (video.src) video.src = '';
+        // 1. Destroy any existing Hls instance
+        if (currentHls) { 
+            currentHls.destroy(); 
+            currentHls = null; 
+        }
+        // Ensure video is cleared and paused before starting a new one
+        video.src = '';
+        video.pause();
+        video.onstalled = null; 
 
         let url = channelUrl;
-        if (channelUrl.includes('pluto.tv') && channelUrl.includes('master.m3u8')) {
-            url = channelUrl.replace('master.m3u8', '640x360/playlist.m3u8')
-                            .replace('master.m3u8', '640930/playlist.m3u8');
+        
+        // 🔑 CRITICAL FIX: UNIVERSAL CACHE BUSTER STRIPPING (Step 1)
+        // This removes the cache-buster if present from a restart attempt.
+        url = url.replace(/(\?|&)?cachebuster=\d+/, '');
+
+        // Corrected Pluto URL Replacement Logic (now uses the cleaned 'url')
+        if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
+            url = url.replace('master.m3u8', '640x360/playlist.m3u8');
         }
 
         const playUrl = PROXY + '?url=' + encodeURIComponent(url);
 
         if (Hls.isSupported()) {
             currentHls = new Hls({
-                startLevel: 0,
-                capLevelToPlayerSize: false,
-                maxMaxBufferLength: 15,
-                maxBufferLength: 40,
-                abrEwmaDefaultEstimate: 300000,
-                enableWorker: true,
-                lowLatencyMode: true,
-                liveSyncDurationCount: 2,
-                liveMaxLatencyDurationCount: 8,
-                maxSeekHole: 3,
-                maxBufferHole: 3,
+                // Optimized Configuration
+                startLevel: -1, 
+                capLevelToPlayerSize: true,
+                maxBufferLength: 15, 
+                maxMaxBufferLength: 60,
+                
+                // RESTORED: Specific Bandwidth Estimate for Pluto TV (300k bps)
+                abrEwmaDefaultEstimate: 300000, 
+                
+                // AGGRESSIVE LIVE STREAM SETTINGS:
+                liveSyncDurationCount: 5,   
+                liveMaxLatencyDurationCount: 15, 
+                liveDurationInfinity: true,
+
+                // CRITICAL STALL AVOIDANCE SETTINGS
+                maxBufferHysteresis: 10, 
+                lowBufferWatchdogPeriod: 2, 
+                manifestLoadingMaxRetryTimeout: 15000, 
+                fragLoadingMaxRetryTimeout: 15000,
             });
+
+            // CRITICAL: Attach media immediately
+            currentHls.attachMedia(video);
+            
+            // 🔑 CRITICAL FIX: Load source using the cache-busting fetch function
+            loadHlsSource(currentHls, playUrl, channelUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
-                video.play();
-
-                // Auto-refresh playlist every 10s to survive ad breaks
-                setInterval(() => {
-                    if (currentHls && !video.paused) {
-                        try { currentHls.startLoad(); } catch(e) {}
-                    }
-                }, 10000);
+                video.play().catch(e => console.warn("Auto-play failed (user interaction needed):", e));
+            });
+            
+            // --- Buffer Reset Handler ---
+            currentHls.on(Hls.Events.BUFFER_RESET, () => {
+                console.log("HLS Buffer system reset. Attempting restart.");
+                loader.style.display = 'none';
+                video.play().catch(e => {});
             });
 
+            // HLS Error Handling for Recovery
             currentHls.on(Hls.Events.ERROR, (event, data) => {
-                console.warn('HLS.js:', data);
-                if (data.fatal || data.details === 'levelEmptyError') {
-                    setTimeout(() => currentHls.loadSource(playUrl), 3000);
+                console.warn('HLS.js Error:', data);
+                loader.style.display = 'none';
+
+                if (data.fatal) {
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        console.log("Media Error, recovering...");
+                        currentHls.recoverMediaError();
+                    } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                        console.log("Fatal Network Error, restarting channel...");
+                        currentHls.destroy();
+                        setTimeout(() => playChannel(channelUrl, channelName), 5000); 
+                    } else {
+                        console.log("Other Fatal Error, restarting channel...");
+                        currentHls.destroy();
+                        setTimeout(() => playChannel(channelUrl, channelName), 3000);
+                    }
+                } 
+                // !!! AGGRESSIVE FIX: Treat non-fatal buffer stalls as fatal and restart
+                else if (data.details === 'levelEmptyError' || data.details === 'bufferStalledError') {
+                    console.log(`NON-FATAL STALL (${data.details}). Forcing full channel restart in 1 second with CACHE BUSTER.`);
+                    currentHls.destroy();
+                    
+                    // 🔑 CRITICAL FIX: CACHE BUSTING on RESTART (Step 2)
+                    // Append a unique parameter (timestamp) to the original channelUrl for the RESTART call
+                    const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
+                    
+                    setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000); 
+                }
+            });
+            
+            // Optional: for logging when buffering completes
+            currentHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+                if (video.paused && video.readyState >= 3) { 
+                    video.play().catch(e => console.log('Auto-play failed after buffer:', e));
                 }
             });
 
-            currentHls.loadSource(playUrl);
-            currentHls.attachMedia(video);
         } else {
+            // Fallback for non-HLS browsers
             video.src = playUrl;
-            video.play();
+            video.play().catch(e => console.warn("Play failed on fallback:", e));
         }
     }
 
-    // M3U PARSER — fixed and moved above usage
+    // M3U PARSER
     function parseM3U(text) {
         const lines = text.split('\n');
         let ch = {};

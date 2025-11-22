@@ -7,6 +7,11 @@ ini_set('display_errors', 0);
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: *');
+
+if (stripos($_GET['url'], 'pluto.tv') !== false) {
+    ini_set('user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
 
 if (empty($_GET['url'])) {
@@ -22,7 +27,12 @@ if (!filter_var($target, FILTER_VALIDATE_URL)) {
 // 1. CACHE (optional but recommended)
 $ENABLE_CACHE = true;
 $CACHE_DIR    = __DIR__.'/proxy_cache';
-$CACHE_TTL    = 30;                 // 30 seconds for everything
+$CACHE_TTL    = 30;                 // Default TTL
+// CRITICAL FIX: Reduce TTL for HLS playlists
+if (preg_match('/\.(m3u8?|m3u)($|\?)/i', $target)) {
+    $CACHE_TTL = 3; // Cache HLS playlists for max 3 seconds
+}
+
 if ($ENABLE_CACHE && !is_dir($CACHE_DIR)) @mkdir($CACHE_DIR, 0755, true);
 
 $cache_key  = md5($target);
@@ -43,7 +53,8 @@ curl_setopt_array($ch, [
     CURLOPT_URL            => $target,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_TIMEOUT        => 30,
+    // CRITICAL FIX: Lower timeout to force quicker failure/recovery
+    CURLOPT_TIMEOUT        => 10, 
     CURLOPT_SSL_VERIFYPEER => false,
     CURLOPT_SSL_VERIFYHOST => false,
     CURLOPT_ENCODING       => '',               // auto gzip/deflate

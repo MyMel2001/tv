@@ -3,201 +3,255 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPTV Playlist Viewer</title>
+    <title>Sparksammy TV</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-            margin: 0;
-            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .container {
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            max-width: 1400px;
+            margin: 20px auto;
+            gap: 20px;
+            padding: 0 20px;
+        }
+        /* Channel List - Left Side */
+        #channel-sidebar {
+            flex: 1;
+            max-width: 420px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         h1 {
-            color: #333;
             text-align: center;
-        }
-        #channel-list {
-            width: 80%;
-            max-width: 800px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
             margin-bottom: 20px;
+            font-size: 2em;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
         .channel-item {
-            padding: 15px;
-            border-bottom: 1px solid #ddd;
-            cursor: pointer;
-            transition: background-color 0.3s;
             display: flex;
             align-items: center;
+            padding: 14px 16px;
+            margin: 8px 0;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
         }
         .channel-item:hover {
-            background-color: #f9f9f9;
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
         }
         .channel-item.active {
-            background-color: #e0f7fa;
+            background: #00d4ff;
+            color: #000;
             font-weight: bold;
+            border-color: #00a8cc;
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
         }
         .channel-logo {
-            width: 40px;
-            height: 40px;
-            margin-right: 15px;
-            border-radius: 4px;
-            object-fit: contain;
-        }
-        #player-container {
-            width: 80%;
-            max-width: 800px;
-            background-color: white;
+            width: 48px;
+            height: 48px;
             border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            padding: 20px;
-            text-align: center;
+            margin-right: 14px;
+            object-fit: contain;
+            background: #000;
+            padding: 4px;
+            flex-shrink: 0;
         }
-        video {
+        .channel-name {
+            flex: 1;
+            font-size: 1.05em;
+        }
+
+        /* Player - Fixed on Right */
+        #player-sidebar {
+            width: 420px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 20px;
+            height: calc(100vh - 40px);
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #video-player {
             width: 100%;
-            height: auto;
-            border-radius: 4px;
+            height: 100%;
+            background: #000;
         }
-        #no-channel {
-            color: #888;
+        #now-playing {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 15px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            font-size: 1.1em;
+            text-align: center;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         }
         .loader {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #00d4ff;
             border-radius: 50%;
-            width: 30px;
-            height: 30px;
+            width: 60px;
+            height: 60px;
             animation: spin 1s linear infinite;
-            margin: 20px auto;
+            z-index: 10;
         }
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-    <!-- Include HLS.js for HLS stream support -->
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-</head>
-<body>
-    <h1>IPTV Channel Viewer</h1>
-    <div id="channel-list"></div>
-    <div id="player-container">
-        <video id="video-player" controls></video>
-        <p id="no-channel">Select a channel to start watching.</p>
-        <div id="loader" class="loader" style="display: none;"></div>
-    </div>
-
-    <script>
-        // Specify your legally obtained M3U playlist here (as a URL or inline content)
-        const playlistUrl = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u'; // Replace with your M3U URL
-        // OR inline M3U content (uncomment and use this if preferred)
-        // const playlistContent = `#EXTM3U\n#EXTINF:-1 tvg-logo="https://example.com/logo1.png",Channel 1\nhttp://example.com/stream1.m3u8\n#EXTINF:-1 tvg-logo="https://example.com/logo2.png",Channel 2\nhttp://example.com/stream2.m3u8`;
-
-        let channels = [];
-        const videoPlayer = document.getElementById('video-player');
-        const noChannelMsg = document.getElementById('no-channel');
-        const loader = document.getElementById('loader');
-        const channelList = document.getElementById('channel-list');
-
-        // Function to parse M3U content
-        function parseM3U(content) {
-            const lines = content.split('\n');
-            let currentChannel = null;
-            channels = [];
-
-            lines.forEach(line => {
-                line = line.trim();
-                if (line.startsWith('#EXTINF:')) {
-                    const info = line.substring(8);
-                    const commaIndex = info.lastIndexOf(',');
-                    const name = info.substring(commaIndex + 1).trim();
-                    const attrs = info.substring(0, commaIndex).trim();
-                    const logoMatch = attrs.match(/tvg-logo="([^"]+)"/);
-                    const logo = logoMatch ? logoMatch[1] : '';
-                    currentChannel = { name, logo };
-                } else if (line && !line.startsWith('#') && currentChannel) {
-                    currentChannel.url = line;
-                    channels.push(currentChannel);
-                    currentChannel = null;
-                }
-            });
-
-            renderChannels();
+            to { transform: translate(-50%, -50%) rotate(360deg); }
         }
 
-        // Render channel list
-        function renderChannels() {
-            channelList.innerHTML = '';
-            channels.forEach((channel, index) => {
-                const item = document.createElement('div');
-                item.classList.add('channel-item');
-                if (channel.logo) {
-                    const img = document.createElement('img');
-                    img.src = channel.logo;
-                    img.alt = channel.name;
-                    img.classList.add('channel-logo');
-                    item.appendChild(img);
-                }
-                const text = document.createTextNode(channel.name);
-                item.appendChild(text);
-                item.addEventListener('click', () => playChannel(channel.url, index));
-                channelList.appendChild(item);
-            });
-        }
-
-        // Play selected channel
-        function playChannel(url, index) {
-            // Highlight active channel
-            document.querySelectorAll('.channel-item').forEach((item, i) => {
-                item.classList.toggle('active', i === index);
-            });
-
-            noChannelMsg.style.display = 'none';
-            loader.style.display = 'block';
-            videoPlayer.style.display = 'none';
-
-            // Stop current playback
-            if (Hls.isSupported()) {
-                if (window.hls) {
-                    window.hls.destroy();
-                }
-                window.hls = new Hls();
-                window.hls.loadSource(url);
-                window.hls.attachMedia(videoPlayer);
-                window.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    videoPlayer.play();
-                    loader.style.display = 'none';
-                    videoPlayer.style.display = 'block';
-                });
-            } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-                videoPlayer.src = url;
-                videoPlayer.addEventListener('loadedmetadata', () => {
-                    videoPlayer.play();
-                    loader.style.display = 'none';
-                    videoPlayer.style.display = 'block';
-                });
-            } else {
-                alert('Your browser does not support HLS playback.');
-                loader.style.display = 'none';
+        /* Responsive */
+        @media (max-width: 992px) {
+            .container { flex-direction: column; }
+            #player-sidebar, #channel-sidebar {
+                width: 100%;
+                max-width: none;
+            }
+            #player-sidebar {
+                position: relative;
+                height: 60vh;
+                top: 0;
             }
         }
+    </style>
+</head>
+<body>
 
-        // Fetch and parse playlist
-        if (playlistUrl) {
-            fetch(playlistUrl)
-                .then(response => response.text())
-                .then(parseM3U)
-                .catch(error => console.error('Error fetching playlist:', error));
-        } else if (typeof playlistContent !== 'undefined') {
-            parseM3U(playlistContent);
+<div class="container">
+    <!-- Channel List -->
+    <div id="channel-sidebar">
+        <h1>Live Channels</h1>
+        <div id="channel-list"></div>
+    </div>
+
+    <!-- Sticky Player -->
+    <div id="player-sidebar">
+        <video id="video-player" controls autoplay></video>
+        <div id="loader" class="loader" style="display: none;"></div>
+        <div id="now-playing">Select a channel to watch</div>
+    </div>
+</div>
+
+<script>
+    // REPLACE THIS WITH YOUR LEGALLY OBTAINED M3U PLAYLIST URL
+    const playlistUrl = 'https://iptv-org.github.io/iptv/categories/news.m3u'; // Example public playlist
+    // Or paste raw M3U content directly below:
+    // const playlistContent = `#EXTM3U\n#EXTINF:...`;
+
+    let channels = [];
+    const video = document.getElementById('video-player');
+    const loader = document.getElementById('loader');
+    const nowPlaying = document.getElementById('now-playing');
+    const channelList = document.getElementById('channel-list');
+
+    function parseM3U(text) {
+        const lines = text.split('\n');
+        let channel = {};
+
+        lines.forEach(line => {
+            line = line.trim();
+            if (line.startsWith('#EXTINF:')) {
+                const nameMatch = line.match(/,(.+)$/);
+                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                const groupMatch = line.match(/group-title="([^"]+)"/);
+
+                channel = {
+                    name: nameMatch ? nameMatch[1].trim() : 'Unknown Channel',
+                    logo: logoMatch ? logoMatch[1] : '',
+                    group: groupMatch ? groupMatch[1] : 'Uncategorized'
+                };
+            }
+            else if (line && !line.startsWith('#') && channel.name) {
+                channel.url = line;
+                channels.push({ ...channel });
+                channel = {};
+            }
+        });
+
+        renderChannels();
+    }
+
+    function renderChannels() {
+        channelList.innerHTML = '';
+        channels.forEach((ch, i) => {
+            const div = document.createElement('div');
+            div.className = 'channel-item';
+            div.innerHTML = `
+                ${ch.logo ? `<img src="${ch.logo}" class="channel-logo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMzMzIj48L3JlY3Q+PHRleHQgeD0iMjQiIHk9IjI4IiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSJ3aGl0ZSI+TVY8L3RleHQ+PC9zdmc+"></img>` : ''}
+                <div class="channel-name">${ch.name}</div>
+            `;
+            div.onclick = () => playChannel(ch, i);
+            channelList.appendChild(div);
+        });
+    }
+
+    function playChannel(channel, index) {
+        // Update active state
+        document.querySelectorAll('.channel-item').forEach((el, i) => {
+            el.classList.toggle('active', i === index);
+        });
+
+        nowPlaying.textContent = `Now Playing: ${channel.name}`;
+        loader.style.display = 'block';
+
+        if (Hls.isSupported()) {
+            if (window.hls) window.hls.destroy();
+            window.hls = new Hls({ enableWorker: true });
+            window.hls.loadSource(channel.url);
+            window.hls.attachMedia(video);
+            window.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                video.play().catch(() => {});
+                loader.style.display = 'none';
+            });
+            window.hls.on(Hls.Events.ERROR, (event, data) => {
+                console.error('HLS Error:', data);
+                loader.style.display = 'none';
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = channel.url;
+            video.play().catch(() => {});
+            loader.style.display = 'none';
         } else {
-            alert('Please specify a playlist URL or content.');
+            alert('HLS not supported in your browser');
+            loader.style.display = 'none';
         }
-    </script>
+    }
+
+    // Load playlist
+    if (typeof playlistContent !== 'undefined') {
+        parseM3U(playlistContent);
+    } else {
+        fetch(playlistUrl)
+            .then(r => r.text())
+            .then(parseM3U)
+            .catch(err => {
+                channelList.innerHTML = `<p style="color:#ff6b6b; text-align:center;">Failed to load playlist.<br>Check URL or network.</p>`;
+                console.error(err);
+            });
+    }
+</script>
 </body>
 </html>

@@ -129,6 +129,7 @@
 <script>
     const PROXY = '/yacs/index.php';
     const originalPlaylist = 'https://raw.githubusercontent.com/mymel2001-holder/iptv-action/refs/heads/main/list.m3u';
+    // This loads the initial playlist list via proxy
     const playlistUrl = PROXY + '?url=' + encodeURIComponent(originalPlaylist);
 
     const video = document.getElementById('video-player');
@@ -139,163 +140,97 @@
     let currentHls = null;
     let channels = [];
 
-    // Custom function to load the source using fetch with explicit cache bypass
-    function loadHlsSource(hlsInstance, proxyUrl) {
-        // Use fetch with cache: 'no-cache' to force the browser to re-validate the resource
-        fetch(proxyUrl, {
-            method: 'GET',
-            cache: 'no-cache', // CRITICAL: Bypasses browser's local cache
-            headers: {
-                'X-Request-Bypass': Date.now().toString() // Extra parameter to help proxy/CDN cache busting
-            }
-        })
-        .then(response => {
-            if (!response.ok) throw new Error(`Network response was not ok: ${response.status}`);
-            return response.text();
-        })
-        .then(manifestText => {
-            // Load the fetched manifest text directly into HLS.js
-            hlsInstance.loadSource(manifestText);
-        })
-        .catch(error => {
-            console.error("Failed to fetch manifest with cache bypass:", error);
-            loader.style.display = 'none';
-            // Trigger a network error recovery if the fetch fails
-            hlsInstance.trigger(Hls.Events.ERROR, {
-                type: Hls.ErrorTypes.NETWORK_ERROR,
-                details: 'manifestLoadingError',
-                fatal: true,
-                error: error
-            });
-        });
-    }
-
-    // FINAL PLAY FUNCTION — continuous playback + Universal Cache-Busting Handling
+    // FUNCTION: PLAY CHANNEL
     function playChannel(channelUrl, channelName) {
-        // Sanity Check for channelName
-        channelName = channelName || 'Loading...';
-        nowPlaying.textContent = channelName;
         loader.style.display = 'block';
+        nowPlaying.textContent = channelName || 'Loading...';
 
-        // 1. Destroy any existing Hls instance
+        // 1. Clean up existing player
         if (currentHls) { 
             currentHls.destroy(); 
             currentHls = null; 
         }
-        // Ensure video is cleared and paused before starting a new one
         video.src = '';
         video.pause();
-        video.onstalled = null; 
-
-        let url = channelUrl;
         
-        // 🔑 CRITICAL FIX: UNIVERSAL CACHE BUSTER STRIPPING (Step 1)
-        // This removes the cache-buster if present from a restart attempt.
-        url = url.replace(/(\?|&)?cachebuster=\d+/, '');
+        let url = channelUrl;
 
-        // Corrected Pluto URL Replacement Logic (now uses the cleaned 'url')
+        // 2. Fix Pluto URLs if needed (Optimized resolution)
         if (url.includes('pluto.tv') && url.includes('master.m3u8')) {
             url = url.replace('master.m3u8', '640x360/playlist.m3u8');
         }
 
-        // 🛑 CRITICAL SANITY CHECK: If URL is empty after cleaning, abort before proxy construction
-        if (!url || !url.startsWith('http')) {
-            console.error("Critical Error: Stream URL is invalid or empty after cleaning. Aborting load.", {url});
-            loader.style.display = 'none';
-            nowPlaying.textContent = `Error: Invalid Stream URL for ${channelName}`;
-            // Return here to prevent playUrl from resolving to just the root path
-            return; 
+        // 3. Prepare Final URL
+        // Check if the URL is already being proxied to avoid double-wrapping
+        // (This happens if the M3U already contains proxied links)
+        let playUrl;
+        if (url.includes(PROXY)) {
+            playUrl = url;
+        } else {
+            playUrl = PROXY + '?url=' + encodeURIComponent(url);
         }
-
-        const playUrl = PROXY + '?url=' + encodeURIComponent(url);
 
         if (Hls.isSupported()) {
             currentHls = new Hls({
-                // Optimized Configuration
+                // Config to support headers that bypass cache
+                xhrSetup: function(xhr, url) {
+                    // This explicitly tells the browser/proxy NOT to use cached data
+                    xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                    xhr.setRequestHeader('Pragma', 'no-cache');
+                    xhr.setRequestHeader('Expires', '0');
+                },
                 startLevel: -1, 
                 capLevelToPlayerSize: true,
                 maxBufferLength: 15, 
                 maxMaxBufferLength: 60,
-                
-                // RESTORED: Specific Bandwidth Estimate for Pluto TV (300k bps)
                 abrEwmaDefaultEstimate: 300000, 
-                
-                // AGGRESSIVE LIVE STREAM SETTINGS:
                 liveSyncDurationCount: 5,   
                 liveMaxLatencyDurationCount: 15, 
                 liveDurationInfinity: true,
-
-                // CRITICAL STALL AVOIDANCE SETTINGS
                 maxBufferHysteresis: 10, 
                 lowBufferWatchdogPeriod: 2, 
                 manifestLoadingMaxRetryTimeout: 15000, 
                 fragLoadingMaxRetryTimeout: 15000,
             });
 
-            // CRITICAL: Attach media immediately
             currentHls.attachMedia(video);
-            
-            // 🔑 Load source using the cache-busting fetch function
-            loadHlsSource(currentHls, playUrl);
+            currentHls.loadSource(playUrl);
 
             currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
                 loader.style.display = 'none';
-                video.play().catch(e => console.warn("Auto-play failed (user interaction needed):", e));
+                video.play().catch(e => console.warn("Auto-play failed:", e));
             });
             
-            // --- Buffer Reset Handler ---
-            currentHls.on(Hls.Events.BUFFER_RESET, () => {
-                console.log("HLS Buffer system reset. Attempting restart.");
-                loader.style.display = 'none';
-                video.play().catch(e => {});
-            });
-
-            // HLS Error Handling for Recovery
+            // --- RECOVERY LOGIC ---
+            
+            // Handle fatal errors or stalls by reloading the SAME URL
+            // (xhrSetup will ensure we get fresh data, no cachebuster needed)
             currentHls.on(Hls.Events.ERROR, (event, data) => {
-                console.warn('HLS.js Error:', data);
-                loader.style.display = 'none';
-                
-                // --- 🔑 FIX: ALL FATAL ERRORS FORCE A CACHE-BUSTED RESTART ---
-                if (data.fatal) {
+                // Ignore minor errors
+                if (!data.fatal && data.details !== 'bufferStalledError' && data.details !== 'levelEmptyError') return;
+
+                console.warn('HLS Issue:', data.details);
+
+                if (data.fatal || data.details === 'bufferStalledError' || data.details === 'levelEmptyError') {
+                    console.log("Stall or Fatal Error. Reloading stream (cache bypassed via headers)...");
                     currentHls.destroy();
-                    
-                    // Generate cache-busted URL for the restart attempt
-                    const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
-                    
-                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR || data.details === 'manifestParsingError') {
-                        console.log("Fatal Media/Parsing Error, forcing full restart...");
-                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000);
-                    } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                        console.log("Fatal Network Error, restarting channel...");
-                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 5000); 
-                    } else {
-                        console.log("Other Fatal Error, restarting channel...");
-                        setTimeout(() => playChannel(cacheBustedUrl, channelName), 3000);
-                    }
-                } 
-                // !!! AGGRESSIVE STALL FIX: Treat non-fatal buffer stalls as fatal and restart
-                else if (data.details === 'levelEmptyError' || data.details === 'bufferStalledError') {
-                    console.log(`NON-FATAL STALL (${data.details}). Forcing full channel restart in 1 second with CACHE BUSTER.`);
-                    currentHls.destroy();
-                    
-                    // Generate cache-busted URL for the restart attempt
-                    const cacheBustedUrl = channelUrl + (channelUrl.includes('?') ? '&' : '?') + 'cachebuster=' + Date.now();
-                    
-                    setTimeout(() => playChannel(cacheBustedUrl, channelName), 1000); 
+                    // Wait 1s and reload. 
+                    // No URL modification needed; headers will force fresh fetch.
+                    setTimeout(() => playChannel(channelUrl, channelName), 1000);
                 }
             });
             
-            // Optional: for logging when buffering completes
+            // Resume if buffer fills up while paused
             currentHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
                 if (video.paused && video.readyState >= 3) { 
-                    video.play().catch(e => console.log('Auto-play failed after buffer:', e));
+                    video.play().catch(e => {});
                 }
             });
 
         } else {
-            // Fallback for non-HLS browsers
+            // Fallback for non-HLS browsers (Safari)
             video.src = playUrl;
-            video.play().catch(e => console.warn("Play failed on fallback:", e));
+            video.play().catch(e => console.warn("Fallback play failed:", e));
         }
     }
 
@@ -313,11 +248,9 @@
                 ch = { name, logo };
             } else if (line && !line.startsWith('#') && ch.name) {
                 ch.url = line;
-                // 🛑 NEW CHECK: Only add channel if URL looks like a URL
+                // Basic validation
                 if (ch.url && ch.url.startsWith('http')) {
                     channels.push({ ...ch });
-                } else {
-                    console.warn("Skipped channel due to invalid URL format:", ch.name, ch.url);
                 }
                 ch = {};
             }
@@ -335,12 +268,6 @@
                 <div class="channel-name">${ch.name}</div>
             `;
             div.onclick = () => {
-                // 🛑 NEW CHECK: Validate URL before passing to playChannel
-                if (!ch.url || !ch.url.startsWith('http')) {
-                    alert(`Error: Cannot play ${ch.name}. Stream URL is missing or invalid.`);
-                    return;
-                }
-                
                 document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
                 div.classList.add('active');
                 playChannel(ch.url, ch.name);
